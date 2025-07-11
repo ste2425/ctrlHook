@@ -1,5 +1,5 @@
 TARGET = ctrlhook
-OBJS = main.o
+OBJS = main.o imports.o
 
 # Define to build this as a prx (instead of a static elf)
 BUILD_PRX = 1

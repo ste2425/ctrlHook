@@ -18,6 +18,7 @@
 #include <pspmodulemgr.h>
 #include <psputility_sysparam.h>
 #include "systemctrl.h"
+#include "pspuart.h"
 
 #define PSP_KERNEL_MODULE_NAME          "sceKernelLibrary"
 
@@ -25,15 +26,14 @@
 
 PSP_MODULE_INFO("op_ditto", 0x1000, 0, 1);
 PSP_MAIN_THREAD_ATTR(0);
-
-void    pspUARTInit(int baud);                                 
-int     pspUARTRead(void);                                  
-void    pspUARTWrite(int ch);                
+  
+int sceKernelRegisterResumeHandler(int reg, int (*handler)(int unk, void *param), void *param);
+int sceKernelRegisterSuspendHandler(int reg, int (*handler)(int unk, void *param), void *param);   
 
 void *hooked_readbuffer_func;
 
-unsigned char xAxis = 0;
-unsigned char yAxis = 0;
+unsigned char xAxis = 50;
+unsigned char yAxis = 20;
 
 static void waitForKernel()
 {
@@ -42,6 +42,52 @@ static void waitForKernel()
     {        
         sceKernelDelayThread(10000); /* wait 10 milliseconds */
     }
+}
+
+int SIO_thread(SceSize args, void *argp)
+{ 
+    // dont do anything until we can confirm all modules are loaded
+    waitForKernel();    
+
+    // Initialize the psp-uart-library
+    pspUARTInit(115200);
+
+    while (1) {
+        pspUARTWrite(COMMANDS_RIGHT_ANALOG);
+
+        pspUARTWaitForData(10000);
+
+        int recievedDataCount = pspUARTAvailable();
+
+        // If we recieved no data skip and request again
+        if (recievedDataCount == 0) 
+        {
+            continue;
+        } 
+        // If only recieved first byte, wait for second
+        else if (recievedDataCount == 1)
+        {
+            pspUARTWaitForData(10000);
+        }
+        
+        // If still not recieved expected two bytes by this point
+        // reset any data recieved and request again
+        if (pspUARTAvailable() != 2) 
+        {
+            pspUARTResetRingBuffer();
+            continue;
+        }
+        
+        int valueX = pspUARTRead();
+        int valueY = pspUARTRead();
+
+        if (valueX != -1 && valueY != -1) {
+            xAxis = valueX;
+            yAxis = valueY;
+        }
+    }
+ 
+    return 0;
 }
 
 s32 sceCtrlReadBufferPositive_patch(SceCtrlData *data, u8 nBufs)
@@ -76,35 +122,27 @@ int main_thread(SceSize args, void *argp)
     return 0;
 }
 
-int SIO_thread(SceSize args, void *argp)
-{ 
-    // dont do anything until we can confirm all modules are loaded
-    waitForKernel();    
+int _ResumeHandler()
+{
+    SceUID ioThid;
 
-    // Initialize the psp-uart-library
-    pspUARTInit(115200);
-
-    while (1) {
-        pspUARTWrite(COMMANDS_RIGHT_ANALOG);
-
-        // small delay to wait for response
-        sceKernelDelayThread(100);
-
-        int valueX = pspUARTRead();
-        int valueY = pspUARTRead();
-
-        if (valueX != -1 && valueY != -1) {
-            xAxis = valueX;
-            yAxis = valueY;
-        }
-        // maybe should clear the buffer on else condition
-        // If we didnt get the response to command expected the contents of the buffer could be compromised
-        // Possibly reset stick to center position?
-
-        // May not be needed as we have the delay anove. Doesnt seem to introduce noticeable lag however
-        sceKernelDelayThread(9900);
+    ioThid = sceKernelCreateThread("IOthread", SIO_thread, 0x18, 0x500, 0, NULL);
+    if (ioThid >= 0) {
+        sceKernelStartThread(ioThid, 0, NULL);
     }
- 
+
+  return 0;
+}
+
+int _SuspendHandler()
+{
+    SceUID ioThid;   
+    pspSdkReferThreadStatusByName("IOthread", &ioThid, NULL);
+    
+    sceKernelTerminateThread(ioThid);
+
+    pspUARTTerminate();
+
     return 0;
 }
 
@@ -124,6 +162,11 @@ int module_start(SceSize args, void *argp)
     if (ioThid >= 0) {
         sceKernelStartThread(ioThid, args, argp);
     }
+    
+    sceKernelRegisterSuspendHandler(0x1F, _SuspendHandler, 0);
+
+    sceKernelRegisterResumeHandler(0x1F, _ResumeHandler, 0);
+
     return 0;
 }
 
@@ -139,5 +182,8 @@ int module_stop(SceSize args, void *argp)
     pspSdkReferThreadStatusByName("IOthread", &ioThid, NULL);
     
     sceKernelTerminateThread(ioThid);
+
+    pspUARTTerminate();
+
     return 0;
 }
