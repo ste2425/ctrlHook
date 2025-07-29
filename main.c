@@ -122,7 +122,7 @@ int main_thread(SceSize args, void *argp)
     return 0;
 }
 
-int _ResumeHandler()
+int _ResumeHandler(int unk, void *param)
 {
     SceUID ioThid;
 
@@ -134,7 +134,7 @@ int _ResumeHandler()
   return 0;
 }
 
-int _SuspendHandler()
+int _SuspendHandler(int unk, void *param)
 {
     SceUID ioThid;   
     pspSdkReferThreadStatusByName("IOthread", &ioThid, NULL);
