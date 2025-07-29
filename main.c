@@ -139,7 +139,7 @@ int _SuspendHandler(int unk, void *param)
     SceUID ioThid;   
     pspSdkReferThreadStatusByName("IOthread", &ioThid, NULL);
     
-    sceKernelTerminateThread(ioThid);
+    sceKernelTerminateDeleteThread(ioThid);
 
     pspUARTTerminate();
 
