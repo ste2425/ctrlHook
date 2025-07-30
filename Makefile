@@ -1,5 +1,5 @@
 TARGET = ctrlhook
-OBJS = main.o imports.o
+OBJS = main.o ioThread.o controllerPatchingThread.o imports.o
 
 # Define to build this as a prx (instead of a static elf)
 BUILD_PRX = 1
